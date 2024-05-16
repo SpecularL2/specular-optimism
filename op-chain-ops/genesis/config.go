@@ -185,6 +185,12 @@ type DeployConfig struct {
 	// OptimismPortalProxy represents the address of the OptimismPortalProxy on L1 and is used
 	// as part of the derivation pipeline.
 	OptimismPortalProxy common.Address `json:"optimismPortalProxy"`
+	// GasPriceOracleOverhead represents the initial value of the gas overhead in the GasPriceOracle predeploy.
+	// Deprecated: Since Ecotone, this field is superseded by GasPriceOracleBaseFeeScalar and GasPriceOracleBlobBaseFeeScalar.
+	GasPriceOracleOverhead uint64 `json:"gasPriceOracleOverhead"`
+	// GasPriceOracleScalar represents the initial value of the gas scalar in the GasPriceOracle predeploy.
+	// Deprecated: Since Ecotone, this field is superseded by GasPriceOracleBaseFeeScalar and GasPriceOracleBlobBaseFeeScalar.
+	GasPriceOracleScalar uint64 `json:"gasPriceOracleScalar"`
 	// GasPriceOracleBaseFeeScalar represents the value of the base fee scalar used for fee calculations.
 	GasPriceOracleBaseFeeScalar uint32 `json:"gasPriceOracleBaseFeeScalar"`
 	// GasPriceOracleBlobBaseFeeScalar represents the value of the blob base fee scalar used for fee calculations.
@@ -478,6 +484,9 @@ func (d *DeployConfig) Check() error {
 // FeeScalar returns the raw serialized fee scalar. Uses pre-Ecotone if legacy config is present,
 // otherwise uses the post-Ecotone scalar serialization.
 func (d *DeployConfig) FeeScalar() [32]byte {
+	if d.GasPriceOracleScalar != 0 {
+		return common.BigToHash(big.NewInt(int64(d.GasPriceOracleScalar)))
+	}
 	return eth.EncodeScalar(eth.EcostoneScalars{
 		BlobBaseFeeScalar: d.GasPriceOracleBlobBaseFeeScalar,
 		BaseFeeScalar:     d.GasPriceOracleBaseFeeScalar,
@@ -591,7 +600,8 @@ func (d *DeployConfig) InteropTime(genesisTime uint64) *uint64 {
 	return &v
 }
 
-// RollupConfig converts a DeployConfig to a rollup.Config
+// RollupConfig converts a DeployConfig to a rollup.Config. If Ecotone is active at genesis, the
+// Overhead value is considered a noop.
 func (d *DeployConfig) RollupConfig(l1StartBlock *types.Block, l2GenesisBlockHash common.Hash, l2GenesisBlockNumber uint64) (*rollup.Config, error) {
 	if d.OptimismPortalProxy == (common.Address{}) {
 		return nil, errors.New("OptimismPortalProxy cannot be address(0)")
@@ -613,7 +623,7 @@ func (d *DeployConfig) RollupConfig(l1StartBlock *types.Block, l2GenesisBlockHas
 			L2Time: l1StartBlock.Time(),
 			SystemConfig: eth.SystemConfig{
 				BatcherAddr: d.BatchSenderAddress,
-				Overhead:    eth.Bytes32{},
+				Overhead:    eth.Bytes32(common.BigToHash(new(big.Int).SetUint64(d.GasPriceOracleOverhead))),
 				Scalar:      eth.Bytes32(d.FeeScalar()),
 				GasLimit:    uint64(d.L2GenesisBlockGasLimit),
 			},
